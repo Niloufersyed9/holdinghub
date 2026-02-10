@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from backend.database import init_db, add_holding, get_holdings, request_sell
+from database import init_db, add_holding, get_holdings, request_sell
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Holding Hub", layout="centered")
