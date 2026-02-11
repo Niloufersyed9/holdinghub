@@ -5,19 +5,19 @@ import yfinance as yf
 
 from database import init_db, add_holding, get_holdings, request_sell
 
-# ================== APP SETUP ==================
+# ================== APP CONFIG ==================
 st.set_page_config(page_title="Holding Hub", layout="wide")
 init_db()
 
 USERS_FILE = "users.csv"
 
-# ================== AUTH ==================
+# ================== AUTH / USERS ==================
 if not os.path.exists(USERS_FILE):
     st.sidebar.error("users.csv not found")
     uploaded = st.sidebar.file_uploader("Upload users.csv", type=["csv"])
     if uploaded:
         pd.read_csv(uploaded).to_csv(USERS_FILE, index=False)
-        st.sidebar.success("Uploaded users.csv. Refresh the page.")
+        st.sidebar.success("Uploaded users.csv. Please refresh the page.")
     st.stop()
 
 users_df = pd.read_csv(USERS_FILE)
@@ -69,22 +69,36 @@ with st.form("add_holding_form", clear_on_submit=True):
 
     if submitted:
         if not symbol:
-            st.error("Stock symbol required")
+            st.error("Stock symbol is required")
         else:
             add_holding(email, symbol, shares, buy_price)
             st.success("✅ Holding added")
             st.rerun()
 
+# ================== LOAD HOLDINGS (DEFENSIVE) ==================
+raw_holdings = get_holdings(email)
+
+if raw_holdings is None:
+    df = pd.DataFrame()
+elif isinstance(raw_holdings, pd.DataFrame):
+    df = raw_holdings.copy()
+else:
+    # Handles list / tuple results safely
+    try:
+        df = pd.DataFrame(
+            raw_holdings,
+            columns=["symbol", "shares", "buy_price"]
+        )
+    except Exception:
+        df = pd.DataFrame()
+
 # ================== DASHBOARD ==================
 st.divider()
 st.subheader("📈 Your Holdings")
 
-df = get_holdings(email)
-
-if df is None or df.empty:
+if df.empty:
     st.info("You don’t own any stocks yet. Add one above 👆")
 else:
-    df = df.copy()
     prices = {}
 
     for sym in df["symbol"].unique():
@@ -99,16 +113,13 @@ else:
     df["Current Value"] = df["shares"] * df["Current Price"]
     df["P/L"] = df["Current Value"] - df["Buy Value"]
 
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
+    st.dataframe(df, use_container_width=True)
 
 # ================== SELL ==================
 st.divider()
 st.subheader("💸 Sell Shares")
 
-if df is not None and not df.empty:
+if not df.empty:
     sell_symbol = st.selectbox("Select Stock", df["symbol"].unique())
     owned_shares = int(df[df["symbol"] == sell_symbol]["shares"].sum())
 
