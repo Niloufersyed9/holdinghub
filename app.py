@@ -86,7 +86,7 @@ if st.session_state.logged_in:
     st.header("📊 Holdings Dashboard")
     st.write(f"Welcome, {st.session_state.user_email}")
 
-    holdings = get_holdings()
+    holdings = get_holdings(st.session_state.user_email)
 
     if holdings is not None and len(holdings) > 0:
         st.dataframe(holdings)
