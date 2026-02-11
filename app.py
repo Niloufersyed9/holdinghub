@@ -1,81 +1,124 @@
 import streamlit as st
 import pandas as pd
 import os
+import yfinance as yf
 
 from database import init_db, add_holding, get_holdings, request_sell
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Holding Hub", layout="centered")
-
-# ---------------- STARTUP ----------------
-st.write("App started")
-
-# ---------------- INIT DB ----------------
+# ================== APP SETUP ==================
+st.set_page_config(page_title="Holding Hub", layout="wide")
 init_db()
 
-# ---------------- SESSION STATE ----------------
+USERS_FILE = "users.csv"
+
+# ================== AUTH ==================
+if not os.path.exists(USERS_FILE):
+    st.sidebar.error("users.csv not found")
+    uploaded = st.sidebar.file_uploader("Upload users.csv", type=["csv"])
+    if uploaded:
+        pd.read_csv(uploaded).to_csv(USERS_FILE, index=False)
+        st.sidebar.success("Uploaded users.csv. Refresh the page.")
+    st.stop()
+
+users_df = pd.read_csv(USERS_FILE)
+users_df["email"] = users_df["email"].astype(str).str.lower().str.strip()
+allowed_emails = users_df["email"].tolist()
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-if "user_email" not in st.session_state:
-    st.session_state.user_email = None
+if "email" not in st.session_state:
+    st.session_state.email = None
 
-# ---------------- CONSTANTS ----------------
-USERS_FILE = "users.csv"
+if not st.session_state.logged_in:
+    st.title("🔐 Login")
+    email_input = st.text_input("Email")
 
-# ---------------- SIDEBAR: USERS SETUP ----------------
-st.sidebar.header("⚙️ Users Setup")
-
-if not os.path.exists(USERS_FILE):
-    st.sidebar.warning("users.csv not found. Upload to continue.")
-
-    uploaded = st.sidebar.file_uploader("Upload users.csv", type=["csv"])
-
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
-        df.to_csv(USERS_FILE, index=False)
-        st.sidebar.success("Uploaded users.csv. Refresh the page.")
+    if st.button("Login"):
+        if email_input.lower().strip() in allowed_emails:
+            st.session_state.logged_in = True
+            st.session_state.email = email_input.lower().strip()
+            st.rerun()
+        else:
+            st.error("Email not authorized")
 
     st.stop()
 
-# ---------------- LOAD USERS ----------------
-users_df = pd.read_csv(USERS_FILE)
+email = st.session_state.email
 
-if "email" not in users_df.columns:
-    st.error("users.csv must contain a column named 'email'")
-    st.stop()
+# ================== HEADER ==================
+st.title("📊 Holding Hub")
+st.caption(f"Logged in as **{email}**")
 
-users_df["email"] = users_df["email"].astype(str).str.lower().str.strip()
-valid_emails = users_df["email"].tolist()
-
-# 🔎 TEMP DEBUG — REMOVE LATER
-st.write("Allowed emails:", valid_emails)
-
-# ---------------- LOGIN ----------------
 st.divider()
-st.header("Login")
 
-login_email = st.text_input("Email")
+# ================== ADD HOLDING ==================
+st.subheader("➕ Add Holding")
 
-if st.button("Login"):
-    if login_email.lower().strip() in valid_emails:
-        st.session_state.logged_in = True
-        st.session_state.user_email = login_email.lower().strip()
-        st.success("Logged in successfully")
-    else:
-        st.error("Email not authorized")
+with st.form("add_holding_form", clear_on_submit=True):
+    col1, col2, col3 = st.columns(3)
 
-# ---------------- DASHBOARD ----------------
-if st.session_state.logged_in:
-    st.divider()
-    st.header("📊 Holdings Dashboard")
-    st.write(f"Welcome, {st.session_state.user_email}")
+    with col1:
+        symbol = st.text_input("Stock Symbol (e.g. AAPL)")
+    with col2:
+        shares = st.number_input("Shares", min_value=1, step=1)
+    with col3:
+        buy_price = st.number_input("Buy Price", min_value=0.0, step=0.01)
 
-    holdings = get_holdings(st.session_state.user_email)
+    submitted = st.form_submit_button("Add Holding")
 
-    if holdings is not None and len(holdings) > 0:
-        st.dataframe(holdings)
-    else:
-        st.info("No holdings found yet.")
+    if submitted:
+        if not symbol:
+            st.error("Stock symbol required")
+        else:
+            add_holding(email, symbol, shares, buy_price)
+            st.success("✅ Holding added")
+            st.rerun()
 
-st.write("✅ App loaded successfully")
+# ================== DASHBOARD ==================
+st.divider()
+st.subheader("📈 Your Holdings")
+
+df = get_holdings(email)
+
+if df is None or df.empty:
+    st.info("You don’t own any stocks yet. Add one above 👆")
+else:
+    df = df.copy()
+    prices = {}
+
+    for sym in df["symbol"].unique():
+        try:
+            hist = yf.Ticker(sym).history(period="1d")
+            prices[sym] = float(hist["Close"].iloc[-1])
+        except Exception:
+            prices[sym] = None  # market price unavailable
+
+    df["Current Price"] = df["symbol"].map(prices)
+    df["Buy Value"] = df["shares"] * df["buy_price"]
+    df["Current Value"] = df["shares"] * df["Current Price"]
+    df["P/L"] = df["Current Value"] - df["Buy Value"]
+
+    st.dataframe(
+        df,
+        use_container_width=True
+    )
+
+# ================== SELL ==================
+st.divider()
+st.subheader("💸 Sell Shares")
+
+if df is not None and not df.empty:
+    sell_symbol = st.selectbox("Select Stock", df["symbol"].unique())
+    owned_shares = int(df[df["symbol"] == sell_symbol]["shares"].sum())
+
+    sell_qty = st.number_input(
+        "Shares to sell",
+        min_value=1,
+        max_value=owned_shares,
+        step=1
+    )
+
+    if st.button("Request Sell"):
+        request_sell(email, sell_symbol, sell_qty)
+        st.success("📨 Sell request sent to company")
