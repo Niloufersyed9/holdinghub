@@ -5,19 +5,19 @@ import yfinance as yf
 
 from database import init_db, add_holding, get_holdings, request_sell
 
-# ================== APP CONFIG ==================
+# ================== APP SETUP ==================
 st.set_page_config(page_title="Holding Hub", layout="wide")
 init_db()
 
 USERS_FILE = "users.csv"
 
-# ================== AUTH / USERS ==================
+# ================== AUTH ==================
 if not os.path.exists(USERS_FILE):
     st.sidebar.error("users.csv not found")
     uploaded = st.sidebar.file_uploader("Upload users.csv", type=["csv"])
     if uploaded:
         pd.read_csv(uploaded).to_csv(USERS_FILE, index=False)
-        st.sidebar.success("Uploaded users.csv. Please refresh the page.")
+        st.sidebar.success("Uploaded users.csv. Refresh the page.")
     st.stop()
 
 users_df = pd.read_csv(USERS_FILE)
@@ -75,26 +75,11 @@ with st.form("add_holding_form", clear_on_submit=True):
             st.success("✅ Holding added")
             st.rerun()
 
-# ================== LOAD HOLDINGS (DEFENSIVE) ==================
-raw_holdings = get_holdings(email)
-
-if raw_holdings is None:
-    df = pd.DataFrame()
-elif isinstance(raw_holdings, pd.DataFrame):
-    df = raw_holdings.copy()
-else:
-    # Handles list / tuple results safely
-    try:
-        df = pd.DataFrame(
-            raw_holdings,
-            columns=["symbol", "shares", "buy_price"]
-        )
-    except Exception:
-        df = pd.DataFrame()
-
 # ================== DASHBOARD ==================
 st.divider()
 st.subheader("📈 Your Holdings")
+
+df = get_holdings(email)
 
 if df.empty:
     st.info("You don’t own any stocks yet. Add one above 👆")
@@ -106,7 +91,7 @@ else:
             hist = yf.Ticker(sym).history(period="1d")
             prices[sym] = float(hist["Close"].iloc[-1])
         except Exception:
-            prices[sym] = None  # market price unavailable
+            prices[sym] = None
 
     df["Current Price"] = df["symbol"].map(prices)
     df["Buy Value"] = df["shares"] * df["buy_price"]

@@ -1,70 +1,68 @@
 import sqlite3
+import pandas as pd
 
 DB_NAME = "holdings.db"
 
+def get_conn():
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    conn = get_conn()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS holdings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT,
-            symbol TEXT,
-            shares_owned INTEGER,
-            buy_price REAL,
-            current_price REAL
+            email TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            shares INTEGER NOT NULL,
+            buy_price REAL NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sell_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            shares INTEGER NOT NULL,
+            status TEXT DEFAULT 'PENDING'
         )
     """)
 
     conn.commit()
     conn.close()
 
+def add_holding(email, symbol, shares, buy_price):
+    conn = get_conn()
+    cur = conn.cursor()
 
-def add_holding(email, symbol, shares_owned, buy_price, current_price):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    # Replace existing holding for same user + stock
-    c.execute(
-        "DELETE FROM holdings WHERE email = ? AND symbol = ?",
-        (email, symbol)
+    cur.execute(
+        "INSERT INTO holdings (email, symbol, shares, buy_price) VALUES (?, ?, ?, ?)",
+        (email, symbol.upper(), int(shares), float(buy_price))
     )
-
-    c.execute("""
-        INSERT INTO holdings (email, symbol, shares_owned, buy_price, current_price)
-        VALUES (?, ?, ?, ?, ?)
-    """, (email, symbol, shares_owned, buy_price, current_price))
 
     conn.commit()
     conn.close()
 
-
 def get_holdings(email):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("""
-        SELECT symbol, shares_owned, buy_price, current_price
-        FROM holdings
-        WHERE email = ?
-    """, (email,))
-
-    rows = c.fetchall()
+    conn = get_conn()
+    df = pd.read_sql(
+        "SELECT symbol, shares, buy_price FROM holdings WHERE email = ?",
+        conn,
+        params=(email,)
+    )
     conn.close()
+    return df
 
-    return [
-        {
-            "symbol": r[0],
-            "shares_owned": r[1],
-            "buy_price": r[2],
-            "current_price": r[3]
-        }
-        for r in rows
-    ]
+def request_sell(email, symbol, shares):
+    conn = get_conn()
+    cur = conn.cursor()
 
+    cur.execute(
+        "INSERT INTO sell_requests (email, symbol, shares) VALUES (?, ?, ?)",
+        (email, symbol.upper(), int(shares))
+    )
 
-def request_sell(email, symbol, quantity):
-    # For now, just log the request (HF-safe)
-    print(f"SELL REQUEST → {email} | {symbol} | {quantity}")
+    conn.commit()
+    conn.close()
