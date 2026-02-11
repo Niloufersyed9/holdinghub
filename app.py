@@ -7,11 +7,18 @@ from database import init_db, add_holding, get_holdings, request_sell
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Holding Hub", layout="centered")
 
-# ---------------- STARTUP DEBUG ----------------
+# ---------------- STARTUP ----------------
 st.write("App started")
 
 # ---------------- INIT DATABASE ----------------
 init_db()
+
+# ---------------- SESSION STATE ----------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
 
 # ---------------- CONSTANTS ----------------
 USERS_FILE = "users.csv"
@@ -19,7 +26,7 @@ USERS_FILE = "users.csv"
 # ---------------- SIDEBAR: ADMIN SETUP ----------------
 st.sidebar.header("⚙️ Admin Setup")
 
-# If users.csv does NOT exist, ask to upload and stop safely
+# ---------------- USERS FILE CHECK ----------------
 if not os.path.exists(USERS_FILE):
     st.sidebar.warning("users.csv not found. Please upload it to continue.")
 
@@ -33,26 +40,37 @@ if not os.path.exists(USERS_FILE):
         users_df.to_csv(USERS_FILE, index=False)
         st.sidebar.success("users.csv uploaded successfully. Please refresh the page.")
 
-    # Stop AFTER showing UI (prevents blank screen)
-    st.stop()
+    st.stop()  # stop AFTER showing upload UI
 
-# ---------------- MAIN PAGE: ADMIN SETUP ----------------
-st.header("Admin Setup")
-
-# Load users.csv
+# ---------------- LOAD USERS ----------------
 users_df = pd.read_csv(USERS_FILE)
 
-# Validate required column
 if "email" not in users_df.columns:
     st.error("❌ users.csv must contain an 'email' column")
     st.stop()
 
-# Clean emails
 users_df = users_df[users_df["email"].notna()]
 users_df["email"] = users_df["email"].astype(str).str.lower()
 valid_emails = users_df["email"].tolist()
 
-# ---------------- ADMIN CREATION UI ----------------
+# ---------------- LOGIN ----------------
+st.divider()
+st.header("Login")
+
+login_email = st.text_input("Email to login")
+
+if st.button("Login"):
+    if login_email.lower() in valid_emails:
+        st.session_state.logged_in = True
+        st.session_state.user_email = login_email.lower()
+        st.success("Logged in successfully")
+    else:
+        st.error("Email not authorized")
+
+# ---------------- ADMIN SETUP ----------------
+st.divider()
+st.header("Admin Setup")
+
 admin_email = st.text_input("Admin Email")
 admin_password = st.text_input("Password", type="password")
 
@@ -62,11 +80,17 @@ if st.button("Create Admin"):
     else:
         st.success("Admin created (placeholder logic)")
 
-# ---------------- SESSION STATE ----------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+# ---------------- DASHBOARD ----------------
+if st.session_state.logged_in:
+    st.divider()
+    st.header("📊 Holdings Dashboard")
+    st.write(f"Welcome, {st.session_state.user_email}")
 
-if "user_email" not in st.session_state:
-    st.session_state.user_email = None
+    holdings = get_holdings()
+
+    if holdings is not None and len(holdings) > 0:
+        st.dataframe(holdings)
+    else:
+        st.info("No holdings found yet.")
 
 st.write("✅ App loaded successfully")
