@@ -1,7 +1,10 @@
 import sqlite3
 import pandas as pd
+import os
 
-DB_NAME = "holdings.db"
+# FORCE DB TO LIVE INSIDE STREAMLIT WORKSPACE
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, "holdings.db")
 
 def get_conn():
     return sqlite3.connect(DB_NAME, check_same_thread=False)
